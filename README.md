@@ -30,7 +30,7 @@ pip install -r requirements.txt
 
 ## Authors
 
-<your name> (<student number>), <colleague's name> (<student number>)
+João Martins, Sara Pereira
 
 ## License
 
