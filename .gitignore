@@ -28,3 +28,6 @@ results/*.csv
 # OS / editor
 .DS_Store
 .vscode/settings.json
+
+# Claude Code local config — not part of the submitted project
+.claude/
