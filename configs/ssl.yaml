@@ -1,0 +1,24 @@
+# SSL / semi-supervised branch. All learning rates are fixed (no scheduler) for the first pass.
+experiment: sparssl-ssl
+
+m_values: [784, 256]
+label_fractions: [0.01, 0.05, 0.10, 0.25]
+seeds: [0, 1, 2]          # each seed drives the mask, the labeled subset and the model init
+variants: [frozen, scratch]   # "finetuned" is implemented but off for the first pass
+
+model:
+  d: 32
+  hidden: 256
+
+pretrain:
+  lr: 1.0e-3
+  epochs: 50
+  batch_size: 256
+  patience: 5
+
+downstream:
+  lr_head: 1.0e-3         # frozen head, and from-scratch encoder+head
+  lr_finetune: 1.0e-4     # encoder lr in the fine-tuned variant
+  epochs: 100
+  batch_size: 64
+  patience: 15

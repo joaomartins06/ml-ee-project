@@ -12,6 +12,11 @@ venv/
 .venv/
 *.egg-info/
 
+# SSL run outputs (checkpoints, MLflow store, plots)
+outputs/
+mlruns/
+mlflow.db
+
 # Results / figures
 results/*.csv
 !results/.gitkeep
@@ -31,3 +36,4 @@ results/*.csv
 
 # Claude Code local config — not part of the submitted project
 .claude/
+mlartifacts/
