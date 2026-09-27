@@ -33,7 +33,3 @@ pip install -r requirements.txt
 ## Authors
 
 João Martins, Sara Pereira
-
-## License
-
-MIT — see LICENSE.
