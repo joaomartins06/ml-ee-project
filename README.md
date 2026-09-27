@@ -19,6 +19,8 @@ training a classifier from scratch at the same *m*.
 - Supervised DNN: MLP trained end-to-end on the classification task
 - SSL: MLP encoder-decoder pretrained on reconstruction (unsupervised, full
   60k set), classification head attached to the frozen/fine-tuned encoder
+  — see [`docs/ssl.md`](docs/ssl.md) for how to run this branch and read
+  its MLflow results
 
 ## Setup
 
