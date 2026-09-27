@@ -12,9 +12,17 @@ VARIANTS = ("frozen", "finetuned", "scratch")
 
 
 @torch.no_grad()
-def _predict(encoder, head, x, mask):
+def _eval(encoder, head, x, y, mask, batch_size=4096):
+    """Full-dataset cross-entropy loss, accuracy, and predictions (encoder/head in eval mode)."""
     encoder.eval()
-    return torch.cat([head(encoder(apply_mask(x[i : i + 4096], mask))).argmax(1) for i in range(0, len(x), 4096)])
+    total_loss, preds = 0.0, []
+    for i in range(0, len(x), batch_size):
+        xb, yb = apply_mask(x[i : i + batch_size], mask), y[i : i + batch_size]
+        logits = head(encoder(xb))
+        total_loss += F.cross_entropy(logits, yb, reduction="sum").item()
+        preds.append(logits.argmax(1))
+    pred = torch.cat(preds)
+    return total_loss / len(x), (pred == y).float().mean().item(), pred
 
 
 def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, on_epoch=None):
@@ -52,16 +60,11 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
     mask = mask.to(device)
     ev = {k: (data[f"x_{k}"].to(device), data[f"y_{k}"].to(device)) for k in ("val", "test")}
 
-    def acc(split):
-        x, y = ev[split]
-        return (_predict(encoder, head, x, mask) == y).float().mean().item()
-
-    history = {"train_acc": [], "val_acc": [], "test_acc": [], "train_loss": []}
+    history = {"train_loss": [], "val_loss": [], "test_loss": [], "train_acc": [], "val_acc": [], "test_acc": []}
     best = (-1.0, None, None, -1)
     for epoch in range(cfg["epochs"]):
         encoder.train(variant != "frozen")
         perm = torch.randperm(len(x_lab), device=device)
-        epoch_loss = 0.0
         for i in range(0, len(x_lab), cfg["batch_size"]):
             idx = perm[i : i + cfg["batch_size"]]
             xb = apply_mask(x_lab[idx], mask)
@@ -74,14 +77,17 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
             opt.zero_grad()
             loss.backward()
             opt.step()
-            epoch_loss += loss.item() * len(idx)
 
-        tr_acc = (_predict(encoder, head, x_lab, mask) == y_lab).float().mean().item()
-        va_acc, te_acc = acc("val"), acc("test")
-        for k, v in (("train_acc", tr_acc), ("val_acc", va_acc), ("test_acc", te_acc), ("train_loss", epoch_loss / len(x_lab))):
+        # full-dataset, eval-mode loss/accuracy for train/val/test
+        tr_loss, tr_acc, _ = _eval(encoder, head, x_lab, y_lab, mask)
+        va_loss, va_acc, _ = _eval(encoder, head, *ev["val"], mask)
+        te_loss, te_acc, _ = _eval(encoder, head, *ev["test"], mask)
+        epoch_metrics = {"train_loss": tr_loss, "val_loss": va_loss, "test_loss": te_loss,
+                          "train_acc": tr_acc, "val_acc": va_acc, "test_acc": te_acc}
+        for k, v in epoch_metrics.items():
             history[k].append(v)
         if on_epoch:
-            on_epoch(epoch, {"train_loss": epoch_loss / len(x_lab), "train_acc": tr_acc, "val_acc": va_acc, "test_acc": te_acc})
+            on_epoch(epoch, epoch_metrics)
         if va_acc > best[0]:
             best = (va_acc, copy.deepcopy(encoder.state_dict()), copy.deepcopy(head.state_dict()), epoch)
         elif epoch - best[3] >= cfg["patience"]:
@@ -89,13 +95,13 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
 
     encoder.load_state_dict(best[1])
     head.load_state_dict(best[2])
-    x_te, y_te = ev["test"]
-    pred = _predict(encoder, head, x_te, mask)
+    test_loss, test_acc, pred = _eval(encoder, head, *ev["test"], mask)
     return {
         "best_epoch": best[3],
         "val_acc": best[0],
-        "test_acc": (pred == y_te).float().mean().item(),
-        "per_class_acc": per_class_accuracy(pred, y_te),
+        "test_acc": test_acc,
+        "test_loss": test_loss,
+        "per_class_acc": per_class_accuracy(pred, ev["test"][1]),
         "pred": pred.cpu(),
         "history": history,
     }

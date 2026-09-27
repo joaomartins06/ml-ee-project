@@ -34,13 +34,15 @@ def plot_pretrain_curve(hist, title):
 
 
 def plot_training_curves(res, title):
-    """Left: training loss. Right: train / val / test accuracy. Best epoch (by val accuracy) marked."""
+    """Left: train vs val cross-entropy loss. Right: train / val / test accuracy. Best epoch (by val accuracy) marked."""
     h = res["history"]
     ep = np.arange(len(h["train_loss"]))
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 3.6))
-    a1.plot(ep, h["train_loss"], color=SPLIT_COLORS["train"], marker="o", ms=3)
-    a1.set_ylabel("cross-entropy (train)")
+    a1.plot(ep, h["train_loss"], color=SPLIT_COLORS["train"], marker="o", ms=3, label="train")
+    a1.plot(ep, h["val_loss"], color=SPLIT_COLORS["val"], marker="o", ms=3, label="validation")
+    a1.set_ylabel("cross-entropy")
     a1.set_yscale("log")
+    a1.legend()
     for k in ("train", "val", "test"):
         a2.plot(ep, h[f"{k}_acc"], color=SPLIT_COLORS[k], label=k)
     a2.set_ylabel("accuracy")

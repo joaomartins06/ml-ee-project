@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT / "data" #MNIST dataset 
 NUM_PIXELS = 784
 NUM_CLASSES = 10
 
@@ -22,6 +22,7 @@ def _load_raw():
     npz = DATA_DIR / "mnist.npz"
     if npz.exists():
         d = np.load(npz)
+        #MNIST dataset is already divided between train and test
         return d["x_train"], d["y_train"], d["x_test"], d["y_test"]
     from torchvision.datasets import MNIST  # fallback: download
 
@@ -32,12 +33,24 @@ def _load_raw():
 def load_splits(val_size=VAL_SIZE, split_seed=SPLIT_SEED):
     """Fixed split: standard 10k test, `val_size` validation carved from the 60k train, rest = train pool.
 
+    The val/train split is class-stratified (each class contributes val_size * (its share of the
+    60k) images to validation), so validation mirrors the training-pool class balance instead of
+    whatever a single uniform shuffle happens to give.
+
     Returns a dict of tensors: x_{train,val,test} float32 in [0, 1] with shape (N, 784),
     y_{train,val,test} int64 with shape (N,).
     """
     x_tr, y_tr, x_te, y_te = _load_raw()
-    perm = np.random.default_rng(split_seed).permutation(len(x_tr))
-    val_idx, train_idx = perm[:val_size], perm[val_size:]
+    rng = np.random.default_rng(split_seed)
+    val_parts, train_parts = [], []
+    #ensures that the validation set is balanced when it comes to its classes
+    for c in range(NUM_CLASSES):
+        idx = np.flatnonzero(y_tr == c)
+        idx = idx[rng.permutation(len(idx))]
+        n_val_c = round(val_size * len(idx) / len(y_tr))
+        val_parts.append(idx[:n_val_c])
+        train_parts.append(idx[n_val_c:])
+    val_idx, train_idx = np.sort(np.concatenate(val_parts)), np.sort(np.concatenate(train_parts))
 
     def prep(x):
         return torch.from_numpy(x.reshape(len(x), -1).astype(np.float32) / 255.0)
@@ -67,6 +80,7 @@ def make_mask(m, seed):
 
 def apply_mask(x, mask):
     """Zero-filled measurement: x_tilde = mask * x (input size stays 784)."""
+    #just apply the mask element-wise
     return x * mask.to(x.device)
 
 

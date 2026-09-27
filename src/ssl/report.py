@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.data import NUM_CLASSES
-from src.ssl.plots import COLORS, NAMES
+from src.ssl.plots import COLORS, NAMES, SPLIT_COLORS
 
 ORDER = ["frozen", "finetuned", "scratch"]
 
@@ -165,19 +165,62 @@ def plot_per_class_heatmap(df, title):
     return fig
 
 
-def plot_pretrain_overlay(hists, title):
-    """Train (solid) and validation (dashed) reconstruction MSE for every seed of one m. hists: {seed: history}."""
-    fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    for k, (seed, h) in enumerate(sorted(hists.items())):
+def _meanstd_panel(ax, histories, key, color, label):
+    """Draw every seed's own curve (thin, full length) plus a bold mean ± std band truncated to
+    the shortest seed (early stopping can end seeds at different epochs). A seed that stops before
+    the others keeps drawing past the band's edge, and gets a small marker + label at its last point,
+    so it reads clearly against the rest rather than silently flattening the aggregate."""
+    seeds = sorted(histories)
+    lens = {s: len(histories[s][key]) for s in seeds}
+    common, longest = min(lens.values()), max(lens.values())
+    for k, s in enumerate(seeds):
+        vals = histories[s][key]
         c = f"C{k}"
-        ep = np.arange(len(h["train_mse"]))
-        ax.plot(ep, h["train_mse"], color=c, label=f"seed {seed} train")
-        ax.plot(ep, h["val_mse"], color=c, ls="--", label=f"seed {seed} val")
+        ax.plot(np.arange(len(vals)), vals, color=c, lw=1, alpha=0.3)
+        if lens[s] < longest:
+            ax.scatter([lens[s] - 1], [vals[-1]], color=c, s=16, zorder=5)
+            ax.annotate(f"seed {s}", (lens[s] - 1, vals[-1]), fontsize=6, color=c,
+                        xytext=(3, 3), textcoords="offset points")
+    arr = np.array([histories[s][key][:common] for s in seeds])
+    mean, std = arr.mean(0), arr.std(0)
+    ep = np.arange(common)
+    ax.plot(ep, mean, color=color, lw=2.3, label=f"{label} (mean ± std, n={len(seeds)})")
+    ax.fill_between(ep, mean - std, mean + std, color=color, alpha=0.18)
+
+
+def plot_pretrain_meanstd(histories, title):
+    """Reconstruction MSE: mean ± std across seeds (thin lines: each seed). histories: {seed: pretrain history}."""
+    fig, ax = plt.subplots(figsize=(6.6, 4))
+    _meanstd_panel(ax, histories, "train_mse", SPLIT_COLORS["train"], "train")
+    _meanstd_panel(ax, histories, "val_mse", SPLIT_COLORS["val"], "validation")
     ax.set_yscale("log")
     ax.set_xlabel("epoch")
     ax.set_ylabel("reconstruction MSE (per pixel)")
     ax.set_title(title)
-    ax.legend(fontsize=8, ncol=2)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def plot_training_meanstd(results_by_seed, title):
+    """Left: loss, mean ± std across seeds. Right: accuracy, mean ± std across seeds.
+    results_by_seed: {seed: train_classifier() result dict}."""
+    histories = {s: r["history"] for s, r in results_by_seed.items()}
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
+    _meanstd_panel(a1, histories, "train_loss", SPLIT_COLORS["train"], "train")
+    _meanstd_panel(a1, histories, "val_loss", SPLIT_COLORS["val"], "validation")
+    a1.set_yscale("log")
+    a1.set_xlabel("epoch")
+    a1.set_ylabel("cross-entropy")
+    a1.legend(fontsize=8)
+    _meanstd_panel(a2, histories, "train_acc", SPLIT_COLORS["train"], "train")
+    _meanstd_panel(a2, histories, "val_acc", SPLIT_COLORS["val"], "validation")
+    _meanstd_panel(a2, histories, "test_acc", SPLIT_COLORS["test"], "test")
+    a2.set_xlabel("epoch")
+    a2.set_ylabel("accuracy")
+    a2.set_ylim(0, 1.02)
+    a2.legend(fontsize=8, loc="lower right")
+    fig.suptitle(title)
     fig.tight_layout()
     return fig
 
