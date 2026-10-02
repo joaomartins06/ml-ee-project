@@ -9,29 +9,37 @@ If you just want to run it, skip to [Running it](#running-it).
 
 ## The idea, in short
 
-- **Measurement operator.** For a chosen `m`, a fixed random mask `Φ_m` keeps `m` of the
-  784 pixels and zeros the rest: `x̃ = Φ_m ⊙ x`. This is the same masking operator used
-  elsewhere in the project — see `src/data.py`, shared by every branch.
+- **Masking.** For a chosen `m`, every image gets its own random mask `Φ` that keeps exactly
+  `m` of the 784 pixels and zeros the rest: `x̃ = Φ ⊙ x`. A fresh mask is drawn every time an
+  image is seen in training. Validation and test use fixed per-image masks, drawn once per
+  seed, so the curves and metrics are reproducible. See `random_masks` and `make_eval_masks`
+  in `src/data.py`, shared by every branch.
 - **Pretraining (unsupervised).** An encoder `784 → 256 → 32` and decoder `32 → 256 → 784`
-  are trained to reconstruct the full image `x` from `x̃`, using **all** unlabeled training
-  images. No labels touch this stage.
+  are trained to reconstruct the full image `x` from the masked `x̃`, using **all** unlabeled
+  training images. No labels touch this stage.
 - **Downstream (semi-supervised).** A linear head `32 → 10` is attached to the encoder and
   trained on a **small labeled subset** (1%, 5%, 10%, or 25% of the training pool). Three
   variants, all compared at the same `(m, label_fraction)`:
   - `frozen` — encoder weights frozen, only the head trains. Isolates representation quality.
   - `finetuned` — encoder unfrozen too, trained end-to-end at a lower LR.
   - `scratch` — same architecture, random init, no pretraining. The fair baseline.
-- **The question this branch answers:** does unlabeled pretraining help more when labels
-  and/or measurements (`m`) are scarce? See `frozen`/`finetuned` vs `scratch` at low
-  `label_fraction` and low `m`.
+- **`masked_training`** (config flag, downstream stage only). `true`: the classifier also sees
+  `m`-pixel masked images, with the same random masking as pretraining. `false`: it trains and
+  is evaluated on full images, so `m` only controls the pretraining. It applies to every
+  variant, `scratch` included, so the baseline always sees the same kind of input.
+- **The question this branch answers:** does masked-reconstruction pretraining on unlabeled
+  images help classification when labels are scarce? See `frozen`/`finetuned` vs `scratch`
+  at low `label_fraction`.
 
 ## Repo layout
 
 ```
 src/data.py              SHARED code — every branch must use this, not a private copy:
                           load_splits()       10k test / 6k val / 54k train, class-stratified
-                          make_mask(m, seed)  fixed random mask, exactly m ones
-                          apply_mask(x, mask) x̃ = mask ⊙ x
+                          random_masks(n, m)  per-image random masks, exactly m ones each
+                          make_eval_masks()   fixed per-image masks for train/val/test curves
+                          apply_mask(x, mask) x̃ = mask ⊙ x (one global mask or per-image masks)
+                          make_mask(m, seed)  one fixed global mask (fixed-sensor setting)
                           stratified_subset() class-balanced labeled subset, nested across fractions
 
 src/ssl/
@@ -68,9 +76,10 @@ falls back to downloading it via `torchvision`.
 ## Configuration — `configs/ssl.yaml`
 
 ```yaml
-m_values: [784]                          # measurement counts to sweep (must match the shared grid)
+m_values: [196]                          # pixels kept by the random mask in pretraining (784 = no masking)
+masked_training: false                   # true: downstream sees m-pixel masked inputs; false: full images
 label_fractions: [0.01, 0.05, 0.1, 0.25] # fraction of the 54k train pool that gets labels
-seeds: [0, 1, 2]                         # each seed drives the mask, labeled subset, and init
+seeds: [0, 1, 2]                         # each seed drives the masks, labeled subset, and init
 variants: [frozen, finetuned, scratch]   # which downstream variants to run
 
 model:
@@ -92,8 +101,9 @@ downstream:
 ```
 
 Change this file to change what runs — the script takes no other flags for the grid
-itself. `m_values` should stay aligned with whatever grid the supervised branch is using,
-so results are comparable across branches.
+itself. Runs with different `masked_training` values are different experiments: each
+invocation gets its own `exp{N}` and the flag is part of the name, so nothing is overwritten.
+To compare both settings, run the script twice.
 
 ## Running it
 
@@ -136,7 +146,8 @@ One experiment, `sparssl-ssl` (or `sparssl-ssl-smoke`). One top-level run per `m
 invocation of the script:
 
 ```
-exp{N}_{pretrain_epochs}_{downstream_epochs}_m{m}     top level: this m's full config +
+exp{N}_{pre_epochs}_{down_epochs}_m{m}_{maskedtrain|fulltrain}
+│                                                       top level: this m's full config +
 │                                                       cross-variant/fraction comparison
 │                                                       (tables, bar charts, gap-over-scratch,
 │                                                       per-class heatmap)
@@ -158,7 +169,9 @@ exp{N}_{pretrain_epochs}_{downstream_epochs}_m{m}     top level: this m's full c
 
 `N` auto-increments each time you run the script (shared across every `m` in that
 invocation), so rerunning with different settings never overwrites a previous run — you
-end up with `exp1_...`, `exp2_...`, etc. side by side in the same experiment.
+end up with `exp1_...`, `exp2_...`, etc. side by side in the same experiment. The suffix
+says what the downstream classifier saw: `maskedtrain` (`masked_training: true`) or
+`fulltrain` (`false`). In `fulltrain` runs `m` is the pretraining mask size only.
 
 Every group node (`pretrain`, every `frac=X%`) logs a **mean ± std across seeds** figure —
 thin lines are the individual seeds, the bold line + shaded band is the aggregate,
@@ -176,21 +189,23 @@ value in the UI to jump straight to it. `scratch` runs have no such tag.
 |---|---|
 | MLflow store | `mlflow.db` (repo root) |
 | MLflow artifacts (figures, tables, models) | `mlartifacts/<experiment>/` |
-| Encoder checkpoints (plain `.pt`, outside MLflow too) | `outputs/checkpoints/enc_m{m}_seed{seed}.pt` |
-| Combined results table (all m/variant/fraction/seed) | `outputs/results_ssl.csv` (or `..._smoke.csv`) |
+| Encoder checkpoints (plain `.pt`, outside MLflow too) | `outputs/checkpoints/enc_exp{N}_..._m{m}_{maskedtrain\|fulltrain}_seed{seed}.pt` |
+| Combined results table (all m/variant/fraction/seed of one invocation) | `outputs/results_ssl_exp{N}_{maskedtrain\|fulltrain}.csv` (`results_ssl_smoke_...` for smoke) |
 | Copies of every comparison figure, mirroring the MLflow tree | `outputs/report/exp{N}_..._m{m}/...` |
 
 None of the above is committed — `outputs/`, `mlartifacts/`, `mlflow.db`, and `mlruns/` are
 all gitignored. **MLflow results are local to whoever ran the script** and are not shared
 via git; only the code (`src/`, `scripts/`, `configs/ssl.yaml`) is. If you want to hand
-someone your actual numbers/figures, send `outputs/results_ssl.csv` and/or
+someone your actual numbers/figures, send the `outputs/results_ssl_exp{N}_...csv` file and/or
 `outputs/report/` directly — those don't need MLflow installed to open.
 
 ## Why this matters for the other branches
 
-`src/data.py` is shared on purpose: `load_splits()`, `make_mask()`, `apply_mask()`, and
-`stratified_subset()` are meant to be the **only** implementation of the split and the
-measurement operator in the whole repo. If the supervised or unsupervised branch forks its
-own masking or splitting logic, `m` and the train/val/test split stop being comparable
-across branches, and the mandatory supervised-vs-SSL comparison in the report breaks.
-Import from here rather than reimplementing.
+`src/data.py` is shared on purpose: `load_splits()`, `apply_mask()`, `random_masks()`,
+`make_eval_masks()`, `make_mask()` and `stratified_subset()` are meant to be the **only**
+implementation of the split and the masking in the whole repo. If another branch forks its
+own masking or splitting logic, the train/val/test split and any masked evaluation stop being
+comparable across branches. Import from here rather than reimplementing.
+
+If another branch evaluates on masked inputs, use `make_eval_masks(n, m, seed, "test")` to
+get the same per-image test masks this branch uses.

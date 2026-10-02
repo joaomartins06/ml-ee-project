@@ -1,8 +1,9 @@
 # SSL / semi-supervised branch. All learning rates are fixed (no scheduler) for the first pass.
 experiment: sparssl-ssl
 
-m_values: [784] #784
-label_fractions: [0.01, 0.05, 0.1, 0.25] #0.05, 0.10, 0.25]
+m_values: [98, 294] #784          # pixels kept by the random per-image mask during pretraining (784 = no masking)
+masked_training: false        # true: downstream also sees m-pixel masked inputs; false: downstream trains/evaluates on full images
+label_fractions: [0.01, 0.05, 0.1, 0.25, 0.5, 1] #0.05, 0.10, 0.25]
 seeds: [0, 1, 2]          # each seed drives the mask, the labeled subset and the model init
 variants: [frozen, finetuned, scratch] #finetuned, scratch]   # "finetuned" is implemented but off for the first pass
 
@@ -13,7 +14,7 @@ model:
 pretrain:
   lr: 1.0e-3
   epochs: 200
-  batch_size: 256
+  batch_size: 512
   patience: 20
 
 downstream:

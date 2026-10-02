@@ -79,9 +79,39 @@ def make_mask(m, seed):
 
 
 def apply_mask(x, mask):
-    """Zero-filled measurement: x_tilde = mask * x (input size stays 784)."""
+    """Zero-filled measurement: x_tilde = mask * x (input size stays 784).
+
+    `mask` is either one global (784,) mask or per-image masks of shape (len(x), 784).
+    """
     #just apply the mask element-wise
     return x * mask.to(x.device)
+
+
+EVAL_SPLITS = {"train": 0, "val": 1, "test": 2}
+
+
+def random_masks(n, m, device="cpu", generator=None):
+    """Per-image random binary masks, shape (n, 784), each row with exactly `m` ones.
+
+    Redrawing these every time an image is seen is the masking used for training. `generator`
+    (if given) must live on `device`. For m = 784 every mask is all ones (no masking).
+    """
+    if not 0 < m <= NUM_PIXELS:
+        raise ValueError(f"m must be in [1, {NUM_PIXELS}], got {m}")
+    if m == NUM_PIXELS:
+        return torch.ones(n, NUM_PIXELS, device=device)
+    keep = torch.rand(n, NUM_PIXELS, device=device, generator=generator).topk(m, dim=1).indices
+    return torch.zeros(n, NUM_PIXELS, device=device).scatter_(1, keep, 1.0)
+
+
+def make_eval_masks(n, m, seed, split):
+    """Fixed per-image masks for evaluation: `n` images, exactly `m` pixels kept in each.
+
+    Drawn once per (seed, m, split) and identical across epochs, variants and branches, so
+    validation/test numbers are reproducible and comparable. split: 'train' | 'val' | 'test'.
+    """
+    state = np.random.SeedSequence([seed, m, EVAL_SPLITS[split]]).generate_state(1)[0]
+    return random_masks(n, m, "cpu", torch.Generator().manual_seed(int(state)))
 
 
 def stratified_subset(y, fraction, seed):

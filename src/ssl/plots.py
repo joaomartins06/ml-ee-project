@@ -92,8 +92,10 @@ def plot_confusion(pred, y, title):
     return fig
 
 
-def plot_predictions(x, mask, pred, y, title):
-    """Digits as the classifier sees them (masked). Top: first 10 test images. Bottom: first 10 errors."""
+def plot_predictions(x, masks, pred, y, title):
+    """Digits as the classifier sees them. Top: first 10 test images. Bottom: first 10 errors.
+
+    masks: the fixed per-image test masks (N, 784), or None when the classifier sees full images."""
     wrong = torch.nonzero(pred != y).flatten()[:10]
     blocks = [("first 10 test images", torch.arange(10)), ("first 10 errors", wrong)]
     fig, axes = plt.subplots(2, 10, figsize=(12, 3.4))
@@ -103,7 +105,7 @@ def plot_predictions(x, mask, pred, y, title):
             ax.axis("off")
             if c < len(idx):
                 i = int(idx[c])
-                ax.imshow((x[i] * mask).reshape(28, 28), cmap="gray", vmin=0, vmax=1)
+                ax.imshow((x[i] if masks is None else x[i] * masks[i]).reshape(28, 28), cmap="gray", vmin=0, vmax=1)
                 ax.set_title(f"pred {int(pred[i])} / true {int(y[i])}", fontsize=7, color=GOOD if pred[i] == y[i] else BAD)
         axes[r, 0].text(-0.12, 0.5, name, rotation=90, va="center", ha="right", fontsize=8, transform=axes[r, 0].transAxes)
     fig.suptitle(title)

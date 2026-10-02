@@ -4,7 +4,7 @@ import copy
 import torch
 import torch.nn.functional as F
 
-from src.data import apply_mask
+from src.data import apply_mask, random_masks
 from src.ssl.models import Encoder, Head
 from src.ssl.utils import per_class_accuracy
 
@@ -12,12 +12,17 @@ VARIANTS = ("frozen", "finetuned", "scratch")
 
 
 @torch.no_grad()
-def _eval(encoder, head, x, y, mask, batch_size=4096):
-    """Full-dataset cross-entropy loss, accuracy, and predictions (encoder/head in eval mode)."""
+def _eval(encoder, head, x, y, masks, batch_size=4096):
+    """Full-dataset cross-entropy loss, accuracy, and predictions (encoder/head in eval mode).
+
+    masks: fixed per-image masks of shape (len(x), 784), or None for full (unmasked) images.
+    """
     encoder.eval()
     total_loss, preds = 0.0, []
     for i in range(0, len(x), batch_size):
-        xb, yb = apply_mask(x[i : i + batch_size], mask), y[i : i + batch_size]
+        xb, yb = x[i : i + batch_size], y[i : i + batch_size]
+        if masks is not None:
+            xb = apply_mask(xb, masks[i : i + batch_size])
         logits = head(encoder(xb))
         total_loss += F.cross_entropy(logits, yb, reduction="sum").item()
         preds.append(logits.argmax(1))
@@ -25,13 +30,20 @@ def _eval(encoder, head, x, y, mask, batch_size=4096):
     return total_loss / len(x), (pred == y).float().mean().item(), pred
 
 
-def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, on_epoch=None):
+def _to(t, device):
+    return None if t is None else t.to(device)
+
+
+def train_classifier(variant, cfg, data, device, train_m=None, seed=0, pretrained_encoder=None, on_epoch=None):
     """Train one classifier variant.
 
     variant: 'frozen'    -> pretrained encoder frozen, only the head is trained (lr = cfg['lr_head'])
              'finetuned' -> pretrained encoder + head trained end-to-end (encoder lr = cfg['lr_finetune'])
              'scratch'   -> random-init encoder + head trained end-to-end (lr = cfg['lr_head'])
-    data: dict with x_lab, y_lab (labeled subset) and x_val, y_val, x_test, y_test.
+    data: dict with x_lab, y_lab (labeled subset) and x_val, y_val, x_test, y_test, plus optional fixed
+          per-image masks masks_lab / masks_val / masks_test (used for the train/val/test curves).
+    train_m: pixels kept per image by a fresh random mask on every training batch (same masking as in
+          pretraining). None -> full images everywhere (the masks_* entries are then ignored).
     cfg keys: d, hidden, lr_head, lr_finetune, epochs, batch_size, patience.
     Model selection: weights from the epoch with best validation accuracy; test accuracy is reported at that epoch.
     """
@@ -56,9 +68,12 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
     else:
         opt = torch.optim.Adam(list(encoder.parameters()) + list(head.parameters()), lr=cfg["lr_head"])
 
+    masked = train_m is not None
     x_lab, y_lab = data["x_lab"].to(device), data["y_lab"].to(device)
-    mask = mask.to(device)
-    ev = {k: (data[f"x_{k}"].to(device), data[f"y_{k}"].to(device)) for k in ("val", "test")}
+    masks_lab = _to(data.get("masks_lab"), device) if masked else None
+    ev = {k: (data[f"x_{k}"].to(device), data[f"y_{k}"].to(device),
+              _to(data.get(f"masks_{k}"), device) if masked else None) for k in ("val", "test")}
+    gen = torch.Generator(device=device).manual_seed(seed) if masked else None
 
     history = {"train_loss": [], "val_loss": [], "test_loss": [], "train_acc": [], "val_acc": [], "test_acc": []}
     best = (-1.0, None, None, -1)
@@ -67,7 +82,9 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
         perm = torch.randperm(len(x_lab), device=device)
         for i in range(0, len(x_lab), cfg["batch_size"]):
             idx = perm[i : i + cfg["batch_size"]]
-            xb = apply_mask(x_lab[idx], mask)
+            xb = x_lab[idx]
+            if masked:
+                xb = apply_mask(xb, random_masks(len(idx), train_m, device, gen))
             if variant == "frozen":
                 with torch.no_grad():
                     z = encoder(xb)
@@ -78,10 +95,10 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
             loss.backward()
             opt.step()
 
-        # full-dataset, eval-mode loss/accuracy for train/val/test
-        tr_loss, tr_acc, _ = _eval(encoder, head, x_lab, y_lab, mask)
-        va_loss, va_acc, _ = _eval(encoder, head, *ev["val"], mask)
-        te_loss, te_acc, _ = _eval(encoder, head, *ev["test"], mask)
+        # full-dataset, eval-mode loss/accuracy for train/val/test (fixed masks when masked)
+        tr_loss, tr_acc, _ = _eval(encoder, head, x_lab, y_lab, masks_lab)
+        va_loss, va_acc, _ = _eval(encoder, head, *ev["val"])
+        te_loss, te_acc, _ = _eval(encoder, head, *ev["test"])
         epoch_metrics = {"train_loss": tr_loss, "val_loss": va_loss, "test_loss": te_loss,
                           "train_acc": tr_acc, "val_acc": va_acc, "test_acc": te_acc}
         for k, v in epoch_metrics.items():
@@ -95,7 +112,7 @@ def train_classifier(variant, cfg, mask, data, device, pretrained_encoder=None, 
 
     encoder.load_state_dict(best[1])
     head.load_state_dict(best[2])
-    test_loss, test_acc, pred = _eval(encoder, head, *ev["test"], mask)
+    test_loss, test_acc, pred = _eval(encoder, head, *ev["test"])
     return {
         "best_epoch": best[3],
         "val_acc": best[0],
