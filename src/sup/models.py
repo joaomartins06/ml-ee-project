@@ -24,6 +24,34 @@ class DeepNeuralNetwork(nn.Module):
         return self.network(x)
 
 
+#works on the raw pixels not on PCA features
+class ConvolutionalNeuralNetwork(nn.Module):
+
+    def __init__(self, num_classes=10, dropout=0.3):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(2),              
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2),              #
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(64 * 7 * 7, 128),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, x):
+        return self.classifier(self.features(x))
+
+
 def train_baseline_models(X_train, y_train, X_test):
 
     log_reg = LogisticRegression(max_iter=200, random_state=SEED)

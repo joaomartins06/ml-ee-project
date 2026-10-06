@@ -112,7 +112,8 @@ def plot_per_class_accuracy(results, output_dir):
     output_dir = _save_dir(output_dir)
 
     classes = np.arange(10)
-    width = 0.30
+    n_models = len(results)
+    width = 0.8 / n_models
 
     fig, ax = plt.subplots(figsize=(16, 8))
 
@@ -121,7 +122,7 @@ def plot_per_class_accuracy(results, output_dir):
 
     for i, result in enumerate(results):
         bar = ax.bar(
-            classes + (i - 1) * width,
+            classes + (i - (n_models - 1) / 2) * width,
             result["per_class_accuracy"] * 100,
             width,
             label=result["model"]
@@ -140,7 +141,7 @@ def plot_per_class_accuracy(results, output_dir):
                 va="top",
                 fontweight="bold",
                 color="white",
-                fontsize=9
+                fontsize=7
             )
 
     ax.set_xlabel("Digit Class")
@@ -180,15 +181,15 @@ def plot_per_class_heatmap(results, output_dir):
     path = output_dir / "per_class_heatmap.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
 
 
-def plot_dnn_loss_curves(history, output_dir):
+def plot_dnn_loss_curves(history, output_dir, name="DNN"):
     output_dir = _save_dir(output_dir); epochs = range(1, len(history["train_losses"]) + 1)
     plt.figure(figsize=(10, 6)); plt.plot(epochs, history["train_losses"], label="Training Loss"); plt.plot(epochs, history["val_losses"], label="Validation Loss")
-    plt.xlabel("Epoch"); plt.ylabel("Loss"); plt.title("DNN Training and Validation Loss"); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
-    path = output_dir / "dnn_loss_curves.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
+    plt.xlabel("Epoch"); plt.ylabel("Loss"); plt.title(f"{name} Training and Validation Loss"); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
+    path = output_dir / f"{name.lower()}_loss_curves.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
 
 
-def plot_dnn_accuracy_curves(history, output_dir):
+def plot_dnn_accuracy_curves(history, output_dir, name="DNN"):
     output_dir = _save_dir(output_dir); epochs = range(1, len(history["train_accuracies"]) + 1)
     plt.figure(figsize=(10, 6)); plt.plot(epochs, np.array(history["train_accuracies"]) * 100, label="Training Accuracy"); plt.plot(epochs, np.array(history["val_accuracies"]) * 100, label="Validation Accuracy")
-    plt.xlabel("Epoch"); plt.ylabel("Accuracy (%)"); plt.title("DNN Training and Validation Accuracy"); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
-    path = output_dir / "dnn_accuracy_curves.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
+    plt.xlabel("Epoch"); plt.ylabel("Accuracy (%)"); plt.title(f"{name} Training and Validation Accuracy"); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
+    path = output_dir / f"{name.lower()}_accuracy_curves.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
