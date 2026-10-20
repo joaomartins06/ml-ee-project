@@ -20,6 +20,7 @@ from src.sup.plots import (
     plot_confusion_matrix, plot_accuracy_comparison,
     plot_per_class_accuracy, plot_per_class_heatmap,
     plot_dnn_loss_curves, plot_dnn_accuracy_curves,
+    plot_individual_model_accuracy,
 )
 from src.sup.results import save_results_csv, save_predictions
 
@@ -106,6 +107,7 @@ def main():
     plot_accuracy_comparison(results, OUTPUT_DIR)
     plot_per_class_accuracy(results, OUTPUT_DIR)
     plot_per_class_heatmap(results, OUTPUT_DIR)
+    plot_individual_model_accuracy(results, OUTPUT_DIR)
     plot_dnn_loss_curves(dnn_history, OUTPUT_DIR, name="DNN")
     plot_dnn_accuracy_curves(dnn_history, OUTPUT_DIR, name="DNN")
     plot_dnn_loss_curves(cnn_history, OUTPUT_DIR, name="CNN")
