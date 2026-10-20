@@ -193,3 +193,52 @@ def plot_dnn_accuracy_curves(history, output_dir, name="DNN"):
     plt.figure(figsize=(10, 6)); plt.plot(epochs, np.array(history["train_accuracies"]) * 100, label="Training Accuracy"); plt.plot(epochs, np.array(history["val_accuracies"]) * 100, label="Validation Accuracy")
     plt.xlabel("Epoch"); plt.ylabel("Accuracy (%)"); plt.title(f"{name} Training and Validation Accuracy"); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
     path = output_dir / f"{name.lower()}_accuracy_curves.png"; plt.savefig(path, dpi=150, bbox_inches="tight"); plt.close(); return path
+
+
+def plot_individual_model_accuracy(results, output_dir):
+    output_dir = _save_dir(output_dir)
+    classes = np.arange(10)
+    paths = []
+
+    for result in results:
+        per_class = result["per_class_accuracy"] * 100
+        overall = result["overall_accuracy"] * 100
+        balanced = result["balanced_accuracy"] * 100
+        safe = (result["model"].lower().replace(" ", "_").replace("-", "_")
+                .replace("(", "").replace(")", ""))
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(classes, per_class, color="tab:blue", label="Per-class accuracy")
+
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height - 2.5,
+                f"{height:.1f}%",
+                ha="center",
+                va="top",
+                fontweight="bold",
+                color="white",
+                fontsize=9,
+            )
+
+        ax.axhline(overall, color="tab:red", linestyle="--", linewidth=1.5,
+                   label=f"Overall accuracy ({overall:.2f}%)")
+        ax.axhline(balanced, color="tab:orange", linestyle=":", linewidth=2,
+                   label=f"Balanced accuracy ({balanced:.2f}%)")
+
+        ax.set_xlabel("Digit Class")
+        ax.set_ylabel("Accuracy (%)")
+        ax.set_title(f"Per-Class Test Accuracy: {result['model']}")
+        ax.set_xticks(classes)
+        ax.set_ylim(0, 100)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1))
+
+        plt.tight_layout()
+        path = output_dir / f"individual_accuracy_{safe}.png"
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        paths.append(path)
+
+    return paths
