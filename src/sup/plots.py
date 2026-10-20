@@ -225,7 +225,7 @@ def plot_individual_model_accuracy(results, output_dir):
 
         ax.axhline(overall, color="tab:red", linestyle="--", linewidth=1.5,
                    label=f"Overall accuracy ({overall:.2f}%)")
-        ax.axhline(balanced, color="tab:orange", linestyle=":", linewidth=2,
+        ax.axhline(balanced, color="black", linestyle=":", linewidth=2,
                    label=f"Balanced accuracy ({balanced:.2f}%)")
 
         ax.set_xlabel("Digit Class")

@@ -25,7 +25,7 @@ from src.sup.plots import (
 from src.sup.results import save_results_csv, save_predictions
 
 SEED = 42
-OUTPUT_DIR = Path("outputs") / "supervised"
+OUTPUT_DIR = PROJECT_ROOT / "outputs" / "supervised"
 MODEL_DIR = OUTPUT_DIR / "models"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
