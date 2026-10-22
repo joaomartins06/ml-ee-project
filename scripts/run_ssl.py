@@ -1,42 +1,3 @@
-"""Run the SSL / semi-supervised grid with nested MLflow runs.
-
-    .venv/bin/python scripts/run_ssl.py            # full grid from configs/ssl.yaml
-    .venv/bin/python scripts/run_ssl.py --smoke    # tiny run: check the pipeline and the MLflow layout
-
-View the results (from the repo root, no flags needed):
-
-    .venv/bin/mlflow ui
-
-Masking: pretraining always reconstructs x from a random per-image mask keeping `m` pixels (fresh
-mask every time an image is seen). `masked_training` in the config decides what the downstream
-classifier sees: true -> the same random m-pixel masking (fixed masks for val/test), false -> full
-images. It applies to every variant, `scratch` included, so the baseline stays fair.
-
-Run hierarchy in one experiment, one top-level run per m per invocation:
-
-    exp{N}_{pre_epochs}_{down_epochs}_m{m}_{maskedtrain|fulltrain}
-    │                                                      top level: this m's full config + cross-
-    │                                                      variant/fraction comparison (tables, bar
-    │                                                      charts, gap-over-scratch, per-class heatmap)
-    ├── pretrain                                           group: mean ± std over seeds
-    │   ├── seed=0                                         loss curve, reconstructions, encoder model
-    │   ├── seed=1
-    │   └── seed=2
-    ├── frozen                                              group: this variant across fractions
-    │   ├── frac=1%                                         group: mean ± std over seeds
-    │   │   ├── seed=0                                      training curves, confusion matrix, ...
-    │   │   ├── seed=1
-    │   │   └── seed=2
-    │   ├── frac=5%
-    │   ├── frac=10%
-    │   └── frac=25%
-    ├── finetuned  (same shape as frozen)
-    └── scratch    (same shape, no link to pretrain)
-
-`N` auto-increments per invocation (shared by every m produced in that run), so successive
-experiments (different LRs, schedules, epoch budgets, masked_training, ...) don't collide in the
-run list. The results CSV and encoder checkpoints carry the same experiment name.
-"""
 import argparse
 import copy
 import os
@@ -54,20 +15,20 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.chdir(ROOT)  # MLflow's default store (./mlflow.db, ./mlruns) is then what a plain `mlflow ui` reads
+os.chdir(ROOT)  
 
-from src.data import NUM_PIXELS, apply_mask, load_splits, make_eval_masks, stratified_subset  # noqa: E402
-from src.ssl import plots, report  # noqa: E402
-from src.ssl.downstream import train_classifier  # noqa: E402
-from src.ssl.models import architecture_str  # noqa: E402
-from src.ssl.pretrain import pretrain  # noqa: E402
-from src.ssl.utils import set_seed  # noqa: E402
+from src.data import NUM_PIXELS, apply_mask, load_splits, make_eval_masks, stratified_subset  
+from src.ssl import plots, report  
+from src.ssl.downstream import train_classifier 
+from src.ssl.models import architecture_str
+from src.ssl.pretrain import pretrain  
+from src.ssl.utils import set_seed  
 
 OUT = ROOT / "outputs"
 
 
 def log_fig(fig, artifact_file, local_dir=None):
-    """Log a figure as an MLflow artifact (and optionally keep a local copy for the report)."""
+    #log figure on mlflow
     mlflow.log_figure(fig, artifact_file, save_kwargs={"dpi": 130, "bbox_inches": "tight"})
     if local_dir is not None:
         local_dir.mkdir(parents=True, exist_ok=True)
@@ -76,8 +37,7 @@ def log_fig(fig, artifact_file, local_dir=None):
 
 
 def setup_experiment(name):
-    """Create the experiment with a local artifact folder (the store's default needs a running server),
-    and drop the empty built-in Default experiment so a plain `mlflow ui` opens on real data."""
+    #Create the experiment with a local artifact folder, and drop the empty built-in Default experiment 
     client = mlflow.MlflowClient()
     if mlflow.get_experiment_by_name(name) is None:
         mlflow.create_experiment(name, artifact_location=(ROOT / "mlartifacts" / name).as_uri())
@@ -91,7 +51,7 @@ def setup_experiment(name):
 
 
 def next_exp_index(experiment_id):
-    """Smallest unused N for the `exp{N}_...` top-level run name, so reruns don't collide."""
+    #Smallest unused N for the `exp{N}_...` top-level run name
     client = mlflow.MlflowClient()
     runs = client.search_runs([experiment_id], max_results=5000)
     mx = 0
@@ -103,7 +63,7 @@ def next_exp_index(experiment_id):
 
 
 def ctx(m, masked_training):
-    """Short label for plot titles: what `m` means in this experiment."""
+    #Short label for plot titles: what `m` means in this experiment
     return f"m={m}" if masked_training else f"pretrain m={m}, full-input training"
 
 
@@ -126,7 +86,6 @@ def log_comparison_metrics(agg, gap, prefix=""):
 
 
 def run_pretrain_group(m, seeds, pcfg, d, arch, data, device, local_dir, top_name):
-    """`pretrain` group run: trains every seed's encoder, then logs the mean ± std aggregate on top."""
     encoders, pre_run_id, pre_hist = {}, {}, {}
     with mlflow.start_run(run_name="pretrain", nested=True):
         mlflow.set_tags({"stage": "pretrain-group", "m": m})
@@ -169,7 +128,6 @@ def run_pretrain_group(m, seeds, pcfg, d, arch, data, device, local_dir, top_nam
 
 def run_fraction_group(variant, m, masked_training, frac, seeds, data, eval_masks, dcfg, device,
                         encoders, pre_run_id, local_dir):
-    """`frac=X%` group run: trains every seed's classifier, then logs the mean ± std aggregate on top."""
     results, rows = {}, []
     where = ctx(m, masked_training)
     with mlflow.start_run(run_name=f"frac={report._pct(frac)}%", nested=True):
@@ -179,13 +137,13 @@ def run_fraction_group(variant, m, masked_training, frac, seeds, data, eval_mask
             set_seed(seed)
             lab_idx = stratified_subset(data["y_train"], frac, seed)
             n_lab = len(lab_idx)
-            # low label budgets: validation set is subsampled to a comparable size
+            #low label budgets: subsample val to a size comparable to the labeled set
             val_idx = (torch.arange(len(data["y_val"])) if frac >= 0.10
                        else stratified_subset(data["y_val"], n_lab / len(data["y_val"]), seed))
             ds = {"x_lab": data["x_train"][lab_idx], "y_lab": data["y_train"][lab_idx],
                   "x_val": data["x_val"][val_idx], "y_val": data["y_val"][val_idx],
                   "x_test": data["x_test"], "y_test": data["y_test"]}
-            if masked_training:  # fixed per-image masks for the train/val/test curves
+            if masked_training:  #fixed per-image masks for the train/val/test curves
                 ds["masks_lab"] = make_eval_masks(n_lab, m, seed, "train")
                 ds["masks_val"] = eval_masks[seed]["val"][val_idx]
                 ds["masks_test"] = eval_masks[seed]["test"]
@@ -240,8 +198,6 @@ def run_fraction_group(variant, m, masked_training, frac, seeds, data, eval_mask
 
 def run_variant_group(variant, m, masked_training, fractions, seeds, data, eval_masks, dcfg, device,
                        encoders, pre_run_id, local_dir):
-    """`{variant}` group run: one fraction-group per label fraction, then this variant's own
-    accuracy-vs-label-fraction figure across fractions."""
     rows = []
     with mlflow.start_run(run_name=variant, nested=True):
         mlflow.set_tags({"stage": "variant-group", "variant": variant, "m": m, "masked_training": masked_training})
@@ -301,7 +257,7 @@ def main():
                 **{f"pretrain_{k}": v for k, v in cfg["pretrain"].items()},
                 **{f"downstream_{k}": v for k, v in cfg["downstream"].items()}})
 
-            # fixed per-image val/test masks, shared by every variant and fraction of a seed
+            #fixed per-image val/test masks, shared by all variants and fractions of a seed
             eval_masks = ({seed: {"val": make_eval_masks(len(data["x_val"]), m, seed, "val"),
                                   "test": make_eval_masks(len(data["x_test"]), m, seed, "test")}
                            for seed in cfg["seeds"]} if masked_training else {})
@@ -320,7 +276,7 @@ def main():
             all_rows += rows_m
             pd.DataFrame(all_rows).to_csv(results_path, index=False)
 
-            # ---- this m's cross-variant / cross-fraction comparison (top level) ----
+            #this m's cross-variant / cross-fraction comparison (top level)
             where = ctx(m, masked_training)
             df_m = pd.DataFrame(rows_m)
             agg_m, gap_m = report.aggregate(df_m), report.gap_table(df_m)

@@ -1,4 +1,3 @@
-"""Cross-condition aggregation, tables and comparison figures (m-level and summary-level MLflow artifacts)."""
 import matplotlib
 
 matplotlib.use("Agg")
@@ -20,8 +19,8 @@ def _pct(f):
     return f"{f * 100:g}"
 
 
+#mean/std over seeds of test accuracy per (m, variant, label_fraction)
 def aggregate(df):
-    """Mean / std over seeds of test accuracy per (m, variant, label_fraction)."""
     agg = (df.groupby(["m", "variant", "label_fraction"])
              .agg(n_labeled=("n_labeled", "first"), n_seeds=("seed", "nunique"),
                   test_acc_mean=("test_acc", "mean"), test_acc_std=("test_acc", "std"),
@@ -31,8 +30,8 @@ def aggregate(df):
     return agg
 
 
+#accuracy gain over scratch in percentage points, mean/std over seeds
 def gap_table(df):
-    """Per (m, label_fraction): accuracy gain (percentage points) of each SSL variant over scratch, mean/std over seeds."""
     p = df.pivot_table(index=["m", "label_fraction", "seed"], columns="variant", values="test_acc")
     if "scratch" not in p:
         return None
@@ -48,8 +47,8 @@ def gap_table(df):
     return gap
 
 
+#mean ± std table, one row per (m, fraction), one column per variant
 def results_table(agg):
-    """Wide 'mean ± std (%)' table: one row per (m, label fraction), one column per variant."""
     a = agg.assign(cell=(agg.test_acc_mean * 100).map("{:.2f}".format) + " ± " + (agg.test_acc_std * 100).map("{:.2f}".format))
     wide = a.pivot(index=["m", "label_fraction", "n_labeled"], columns="variant", values="cell")
     wide = wide[[v for v in ORDER if v in wide.columns]].rename(columns=NAMES).reset_index()
@@ -72,7 +71,6 @@ def _panels(agg, figsize_per=4.2):
 
 
 def plot_acc_vs_fraction(agg, title):
-    """Test accuracy vs label fraction, one panel per m, one line per variant (error bars: std over seeds)."""
     ms, fig, axes = _panels(agg)
     for ax, m in zip(axes, ms):
         for v in _variants(agg):
@@ -93,7 +91,6 @@ def plot_acc_vs_fraction(agg, title):
 
 
 def plot_grouped_bars(agg, title):
-    """Grouped bars: label fraction on x, one bar per variant, one panel per m."""
     ms, fig, axes = _panels(agg, 5.2)
     variants, fracs = _variants(agg), sorted(agg.label_fraction.unique())
     width = 0.8 / len(variants)
@@ -119,7 +116,6 @@ def plot_grouped_bars(agg, title):
 
 
 def plot_gap(gap, title):
-    """Accuracy gain over the from-scratch baseline (percentage points) vs label fraction."""
     ms = sorted(gap["m"].unique())
     fig, axes = plt.subplots(1, len(ms), figsize=(4.2 * len(ms), 3.8), sharey=True, squeeze=False)
     for ax, m in zip(axes[0], ms):
@@ -142,7 +138,6 @@ def plot_gap(gap, title):
 
 
 def plot_per_class_heatmap(df, title):
-    """Mean per-class test accuracy (%) for every (m, variant, label fraction) condition."""
     cols = [f"acc_class_{c}" for c in range(NUM_CLASSES)]
     g = df.groupby(["m", "variant", "label_fraction"])[cols].mean().reset_index()
     g["order"] = g["variant"].map(ORDER.index)
@@ -165,11 +160,9 @@ def plot_per_class_heatmap(df, title):
     return fig
 
 
+#thin lines: each seed, bold line + band: mean ± std up to the shortest seed
+#seeds that stop early are marked at their last epoch
 def _meanstd_panel(ax, histories, key, color, label):
-    """Draw every seed's own curve (thin, full length) plus a bold mean ± std band truncated to
-    the shortest seed (early stopping can end seeds at different epochs). A seed that stops before
-    the others keeps drawing past the band's edge, and gets a small marker + label at its last point,
-    so it reads clearly against the rest rather than silently flattening the aggregate."""
     seeds = sorted(histories)
     lens = {s: len(histories[s][key]) for s in seeds}
     common, longest = min(lens.values()), max(lens.values())
@@ -189,7 +182,6 @@ def _meanstd_panel(ax, histories, key, color, label):
 
 
 def plot_pretrain_meanstd(histories, title):
-    """Reconstruction MSE: mean ± std across seeds (thin lines: each seed). histories: {seed: pretrain history}."""
     fig, ax = plt.subplots(figsize=(6.6, 4))
     _meanstd_panel(ax, histories, "train_mse", SPLIT_COLORS["train"], "train")
     _meanstd_panel(ax, histories, "val_mse", SPLIT_COLORS["val"], "validation")
@@ -203,8 +195,6 @@ def plot_pretrain_meanstd(histories, title):
 
 
 def plot_training_meanstd(results_by_seed, title):
-    """Left: loss, mean ± std across seeds. Right: accuracy, mean ± std across seeds.
-    results_by_seed: {seed: train_classifier() result dict}."""
     histories = {s: r["history"] for s, r in results_by_seed.items()}
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
     _meanstd_panel(a1, histories, "train_loss", SPLIT_COLORS["train"], "train")
@@ -226,7 +216,6 @@ def plot_training_meanstd(results_by_seed, title):
 
 
 def plot_recon_comparison(recons, title):
-    """recons: {m: (x, x_tilde, x_hat)}. Rows: original, then masked + reconstruction for each m."""
     n = 10
     ms = sorted(recons, reverse=True)
     rows = [("original x", recons[ms[0]][0])]

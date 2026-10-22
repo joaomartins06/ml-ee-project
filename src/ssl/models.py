@@ -1,11 +1,10 @@
-"""MLP encoder / decoder / classification head for masked-reconstruction pretraining."""
 import torch.nn as nn
 
 from src.data import NUM_CLASSES, NUM_PIXELS
 
 
+#784 -> 256 -> d, linear latent layer
 class Encoder(nn.Module):
-    """784 -> 256 (ReLU) -> d (linear latent)."""
 
     def __init__(self, d=32, hidden=256):
         super().__init__()
@@ -15,8 +14,8 @@ class Encoder(nn.Module):
         return self.net(x)
 
 
+#d -> 256 -> 784, sigmoid output
 class Decoder(nn.Module):
-    """d -> 256 (ReLU) -> 784 (sigmoid, pixels in [0, 1])."""
 
     def __init__(self, d=32, hidden=256):
         super().__init__()
@@ -26,8 +25,8 @@ class Decoder(nn.Module):
         return self.net(z)
 
 
+#linear head d -> 10, logits
 class Head(nn.Module):
-    """Linear classification head d -> 10 (logits; softmax lives in the cross-entropy loss)."""
 
     def __init__(self, d=32):
         super().__init__()

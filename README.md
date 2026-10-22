@@ -2,34 +2,85 @@
 
 EE4C12 (Machine Learning for Electrical Engineering) final project, TU Delft.
 
-## Overview
+## What this is
 
-Classification of the MNIST dataset framed around measurement-limited settings:
-images are reconstructed from a subset of *m* measurements (random masking /
-compressed sensing), and classification error is studied as a function of *m*.
+MNIST digit classification with two approaches:
 
-Beyond the standard supervised pipeline, we test whether self-supervised
-pretraining (masked-reconstruction pretext task via an encoder-decoder MLP)
-improves classification accuracy under measurement scarcity, compared to
-training a classifier from scratch at the same *m*.
-
-## Models
-
-- Classical baseline: logistic regression / SVM on masked pixel vectors
-- Supervised DNN: MLP trained end-to-end on the classification task
-- SSL: MLP encoder-decoder pretrained on reconstruction (unsupervised, full
-  60k set), classification head attached to the frozen/fine-tuned encoder
-  — see [`docs/ssl.md`](docs/ssl.md) for how to run this branch and read
-  its MLflow results
+- **Supervised:** logistic regression and a linear SVM on PCA features, plus a DNN and a CNN.
+- **Self-supervised (SSL):** an MLP encoder-decoder is pretrained to reconstruct images from
+  randomly masked pixels, using no labels. A classifier is then trained on top using only a
+  small fraction of the labels, and compared against the same network trained from scratch.
 
 ## Setup
 
-\`\`\`bash
+```bash
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
-\`\`\`
+```
+
+MNIST is downloaded automatically on the first run.
+
+## Running
+
+Run everything from the repo root.
+
+**Supervised models**
+
+```bash
+python scripts/run_sup.py
+```
+
+**PCA sweep**
+
+```bash
+python scripts/run_pca_sweep.py
+```
+
+**SSL**
+
+```bash
+python scripts/run_ssl.py --smoke   # tiny test run, takes about a minute
+python scripts/run_ssl.py           # full run, settings in configs/ssl.yaml
+```
+
+The main settings in `configs/ssl.yaml`:
+
+| Setting | Meaning |
+|---|---|
+| `m_values` | pixels kept by the random mask during pretraining (784 = no masking) |
+| `masked_training` | `true`: the classifier also sees masked images, `false`: full images |
+| `label_fractions` | fraction of the training labels the classifier gets |
+| `seeds` | random seeds to repeat each experiment with |
+| `variants` | `frozen` (encoder fixed), `finetuned` (encoder trained too), `scratch` (no pretraining) |
+
+SSL runs are logged with MLflow. To browse the curves, figures and tables, run this in a
+second terminal and open http://localhost:5000:
+
+```bash
+mlflow ui
+```
+
+## Outputs
+
+Everything is written to `outputs/` and is not tracked by git. Supervised results go to
+`outputs/supervised/`. SSL results go to `outputs/` as a CSV per run, and the MLflow data is
+stored in `mlflow.db` and `mlartifacts/`.
+
+## Project layout
+
+```
+scripts/       entry points: run_sup.py, run_pca_sweep.py, run_ssl.py
+configs/       ssl.yaml
+src/data.py    data split and masking, shared by all branches
+src/sup/       supervised models
+src/ssl/       self-supervised models and training
+```
 
 ## Authors
 
 João Martins, Sara Pereira
+
+## License
+
+MIT, see LICENSE.

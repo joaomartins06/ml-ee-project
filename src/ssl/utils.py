@@ -13,6 +13,6 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
+#one accuracy per digit class
 def per_class_accuracy(pred, y):
-    """List of 10 accuracies, one per digit class."""
     return [((pred[y == c] == c).float().mean().item() if (y == c).any() else float("nan")) for c in range(NUM_CLASSES)]

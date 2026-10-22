@@ -1,4 +1,3 @@
-"""Downstream classification on a small labeled subset: frozen / fine-tuned / from-scratch."""
 import copy
 
 import torch
@@ -11,12 +10,9 @@ from src.ssl.utils import per_class_accuracy
 VARIANTS = ("frozen", "finetuned", "scratch")
 
 
+#loss, accuracy and predictions over a full set (masks=None -> full images)
 @torch.no_grad()
 def _eval(encoder, head, x, y, masks, batch_size=4096):
-    """Full-dataset cross-entropy loss, accuracy, and predictions (encoder/head in eval mode).
-
-    masks: fixed per-image masks of shape (len(x), 784), or None for full (unmasked) images.
-    """
     encoder.eval()
     total_loss, preds = 0.0, []
     for i in range(0, len(x), batch_size):
@@ -34,19 +30,10 @@ def _to(t, device):
     return None if t is None else t.to(device)
 
 
+#frozen: pretrained encoder frozen, head only | finetuned: pretrained encoder + head | scratch: random init, encoder + head
+#train_m = pixels kept by a fresh random mask every batch, None -> full images
+#best epoch picked on val accuracy
 def train_classifier(variant, cfg, data, device, train_m=None, seed=0, pretrained_encoder=None, on_epoch=None):
-    """Train one classifier variant.
-
-    variant: 'frozen'    -> pretrained encoder frozen, only the head is trained (lr = cfg['lr_head'])
-             'finetuned' -> pretrained encoder + head trained end-to-end (encoder lr = cfg['lr_finetune'])
-             'scratch'   -> random-init encoder + head trained end-to-end (lr = cfg['lr_head'])
-    data: dict with x_lab, y_lab (labeled subset) and x_val, y_val, x_test, y_test, plus optional fixed
-          per-image masks masks_lab / masks_val / masks_test (used for the train/val/test curves).
-    train_m: pixels kept per image by a fresh random mask on every training batch (same masking as in
-          pretraining). None -> full images everywhere (the masks_* entries are then ignored).
-    cfg keys: d, hidden, lr_head, lr_finetune, epochs, batch_size, patience.
-    Model selection: weights from the epoch with best validation accuracy; test accuracy is reported at that epoch.
-    """
     if variant not in VARIANTS:
         raise ValueError(variant)
     if variant != "scratch" and pretrained_encoder is None:
@@ -95,7 +82,7 @@ def train_classifier(variant, cfg, data, device, train_m=None, seed=0, pretraine
             loss.backward()
             opt.step()
 
-        # full-dataset, eval-mode loss/accuracy for train/val/test (fixed masks when masked)
+        #eval-mode loss/acc on full sets (fixed masks if masked)
         tr_loss, tr_acc, _ = _eval(encoder, head, x_lab, y_lab, masks_lab)
         va_loss, va_acc, _ = _eval(encoder, head, *ev["val"])
         te_loss, te_acc, _ = _eval(encoder, head, *ev["test"])

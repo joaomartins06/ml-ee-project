@@ -1,9 +1,3 @@
-"""Self-supervised pretraining: reconstruct the full image x from a randomly masked x_tilde.
-
-Every time an image is seen in training it gets a fresh random mask keeping exactly `m` pixels
-(per image). Train/validation MSE for monitoring and early stopping use fixed per-image masks
-(`make_eval_masks`), so the curves are reproducible and not noisy from mask resampling.
-"""
 import copy
 
 import torch
@@ -19,16 +13,13 @@ def _recon_mse(encoder, decoder, x, masks, batch_size):
     for i in range(0, len(x), batch_size):
         xb = x[i : i + batch_size]
         total += F.mse_loss(decoder(encoder(apply_mask(xb, masks[i : i + batch_size]))), xb, reduction="sum").item()
-    return total / x.numel()  # mean over all pixels
+    return total / x.numel()  #mean over all pixels
 
 
+#masked reconstruction: fresh random mask per image every batch, fixed masks for train/val mse
+#m = pixels kept per image, seed drives the training and eval masks
+#returns the encoder/decoder from the best val mse epoch
 def pretrain(x_train, x_val, m, seed, cfg, device, on_epoch=None):
-    """Train encoder+decoder on unlabeled images. Loss: MSE(x, g(f(mask * x))) over all 784 pixels.
-
-    m: pixels kept per image by the random mask. seed: drives the training masks and the fixed eval masks.
-    cfg keys: d, hidden, lr, epochs, batch_size, patience.
-    Returns (best_encoder, best_decoder, history) where the weights are from the best val-MSE epoch.
-    """
     encoder, decoder = Encoder(cfg["d"], cfg["hidden"]).to(device), Decoder(cfg["d"], cfg["hidden"]).to(device)
     params = list(encoder.parameters()) + list(decoder.parameters())
     opt = torch.optim.Adam(params, lr=cfg["lr"])

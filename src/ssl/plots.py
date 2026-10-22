@@ -1,4 +1,3 @@
-"""Per-run figures (logged as MLflow artifacts). Every function returns a matplotlib Figure."""
 import matplotlib
 
 matplotlib.use("Agg")
@@ -18,7 +17,6 @@ plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False, "axes
 
 
 def plot_pretrain_curve(hist, title):
-    """Train / validation reconstruction MSE per epoch, best epoch marked."""
     fig, ax = plt.subplots(figsize=(6, 3.6))
     ep = np.arange(len(hist["train_mse"]))
     ax.plot(ep, hist["train_mse"], color=SPLIT_COLORS["train"], marker="o", ms=3, label="train")
@@ -33,8 +31,8 @@ def plot_pretrain_curve(hist, title):
     return fig
 
 
+#left: train/val loss, right: accuracy, dashed line = best val epoch
 def plot_training_curves(res, title):
-    """Left: train vs val cross-entropy loss. Right: train / val / test accuracy. Best epoch (by val accuracy) marked."""
     h = res["history"]
     ep = np.arange(len(h["train_loss"]))
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 3.6))
@@ -92,10 +90,8 @@ def plot_confusion(pred, y, title):
     return fig
 
 
+#first 10 test images and first 10 errors, as the classifier sees them (masks=None -> full images)
 def plot_predictions(x, masks, pred, y, title):
-    """Digits as the classifier sees them. Top: first 10 test images. Bottom: first 10 errors.
-
-    masks: the fixed per-image test masks (N, 784), or None when the classifier sees full images."""
     wrong = torch.nonzero(pred != y).flatten()[:10]
     blocks = [("first 10 test images", torch.arange(10)), ("first 10 errors", wrong)]
     fig, axes = plt.subplots(2, 10, figsize=(12, 3.4))
@@ -113,8 +109,8 @@ def plot_predictions(x, masks, pred, y, title):
     return fig
 
 
+#rows: original, masked, reconstruction
 def plot_reconstructions(x, x_tilde, x_hat, title, n=10):
-    """Rows: original x, masked x_tilde (classifier input), reconstruction x_hat."""
     fig, axes = plt.subplots(3, n, figsize=(n * 1.1, 3.8))
     for r, (name, imgs) in enumerate([("x", x), ("x̃ (masked)", x_tilde), ("x̂ (reconstruction)", x_hat)]):
         for i in range(n):
