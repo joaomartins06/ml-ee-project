@@ -15,6 +15,7 @@ venv/
 # SSL run outputs (checkpoints, MLflow store, plots)
 outputs/
 mlruns/
+docs/
 mlflow.db
 
 # Results / figures
